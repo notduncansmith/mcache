@@ -23,49 +23,46 @@ func TestMCacheRoundtrip(t *testing.T) {
 		"c":   Document{ID: "c", UpdatedAt: now.Unix()},
 		"m:a": *manifestDoc,
 	}
-	m, err := NewMCache(DefaultConfig, getLoader(docs))
+	config := DefaultConfig
+	config.DataDir = "./.tmp"
+	m, err := NewMCache(config)
 
 	if err != nil {
-		t.Errorf("Failed to open mcache: %v", err)
-		return
+		t.Fatalf("Failed to open mcache: %v", err)
 	}
 
 	idx, err := m.CreateIndex("test")
-
 	if err != nil {
-		t.Errorf("Failed to open index: %v", err)
-		return
+		t.Fatalf("Failed to open index: %v", err)
+	}
+	if err = idx.Update(docs); err != nil {
+		t.Fatalf("Failed to open index: %v", err)
 	}
 
 	results, err := idx.Query("m:a", now.Add(-4*time.Minute).Unix())
 	if err != nil {
-		t.Errorf("Failed to query index: %v", err)
-		return
+		t.Fatalf("Failed to query index: %v", err)
 	}
 	expected := NewDocSet(docs["a"], docs["b"])
 	expectDocs(t, expected, results)
 
 	manifest, err := idx.GetManifest("m:a")
 	if err != nil {
-		t.Errorf("Failed to get manifest: %v", err)
-		return
+		t.Fatalf("Failed to get manifest: %v", err)
 	}
-	manifest.DocumentIDs["c"] = struct{}{}
+	manifest.DocumentIDs["c"] = true
 	manifest.UpdatedAt = time.Now().Unix()
 	newManifestDoc, err := EncodeManifest(*manifest)
 	if err != nil {
-		t.Errorf("Failed to encode manifest: %v", err)
-		return
+		t.Fatalf("Failed to encode manifest: %v", err)
 	}
 	if err := idx.Update(NewDocSet(*newManifestDoc)); err != nil {
-		t.Errorf("Failed to update index: %v", err)
-		return
+		t.Fatalf("Failed to update index: %v", err)
 	}
 
 	results, err = idx.Query("m:a", now.Add(-4*time.Minute).Unix())
 	if err != nil {
-		t.Errorf("Failed to query index: %v", err)
-		return
+		t.Fatalf("Failed to query index: %v", err)
 	}
 	expected = NewDocSet(docs["a"], docs["b"], docs["c"])
 	expectDocs(t, expected, results)
@@ -73,19 +70,6 @@ func TestMCacheRoundtrip(t *testing.T) {
 
 func expectDocs(t *testing.T, expected DocSet, actual DocSet) {
 	if diff := cmp.Diff(expected, actual); diff != "" {
-		t.Errorf("Documents mismatch (-expected +actual):\n%s", diff)
-		t.FailNow()
-	}
-}
-
-func getLoader(baseDocs DocSet) Loader {
-	return func(docIDs IDSet, updatedAfter Timestamp) (DocSet, error) {
-		docs := DocSet{}
-
-		for id := range docIDs {
-			docs[id] = baseDocs[id]
-		}
-
-		return docs, nil
+		t.Fatalf("Documents mismatch (-expected +actual):\n%s", diff)
 	}
 }

@@ -8,25 +8,21 @@ import (
 	du "github.com/notduncansmith/duramap"
 )
 
-// Loader is a function that can load documents
-type Loader = func(docIDs IDSet, updatedAfter Timestamp) (DocSet, error)
-
 // Index represents a collection of documents managed by the cache
 type Index struct {
-	ID string
-	Loader
+	ID    string
 	docs  *du.Duramap
 	cache *lru.TwoQueueCache
 }
 
 // NewIndex returns a new Index
-func NewIndex(id string, docs *du.Duramap, loader Loader, cacheSize int) (*Index, error) {
+func NewIndex(id string, docs *du.Duramap, cacheSize int) (*Index, error) {
 	cache, err := lru.New2Q(cacheSize)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Index{id, loader, docs, cache}, nil
+	return &Index{id, docs, cache}, nil
 }
 
 // Update updates the index documents with the latest versions
@@ -41,7 +37,7 @@ func (i *Index) Update(docs DocSet) error {
 			}
 			storedDoc, ok := stored.(Document)
 			if !ok {
-				fmt.Printf("Unable to decode document: %v", tx.Get(d.ID))
+				fmt.Printf("Unable to decode document: %+v", stored)
 				continue
 			}
 			if storedDoc.UpdatedAt < d.UpdatedAt {
@@ -99,18 +95,20 @@ func (i *Index) SoftDelete(ids IDSet) error {
 	})
 }
 
+// TODO: Vacuum will permanently delete any tombstone documents that haven't been updated since a certain date
+
 // GetManifest returns a manifest document
 func (i *Index) GetManifest(manifestDocumentID string) (*Manifest, error) {
 	docs, err := i.LoadDocuments(NewIDSet(manifestDocumentID), 0)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load manifest: %v", err)
+		return nil, fmt.Errorf("Unable to load manifest %v: %v", manifestDocumentID, err)
 	}
-	if len(docs) == 0 {
-		return nil, fmt.Errorf("Unable to load manifest: not found")
+	if docs == nil || len(docs) == 0 {
+		return nil, fmt.Errorf("Unable to load manifest %v: not found", manifestDocumentID)
 	}
 
 	manifestDocument := docs[manifestDocumentID]
-	docIds := map[string]struct{}{}
+	docIds := IDSet{}
 
 	if err = json.Unmarshal(manifestDocument.Body, &docIds); err != nil {
 		return nil, fmt.Errorf("Unable to decode manifest body: %v", err)
@@ -130,7 +128,7 @@ func (i *Index) Query(manifestID string, updatedAfter Timestamp) (DocSet, error)
 	return i.LoadDocuments(m.DocumentIDs, updatedAfter)
 }
 
-// LoadDocuments will, for a given set of document IDs, query the LRU cache for the latest matching versions and call Loader for any remaining
+// LoadDocuments will, for a given set of document IDs, query the LRU cache for the latest matching versions and fetch the rest from the store
 func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (DocSet, error) {
 	docs := DocSet{}
 	uncachedIds := IDSet{}
@@ -149,21 +147,24 @@ func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (DocSet, err
 				docs[k] = doc
 			}
 		} else {
-			uncachedIds[k] = struct{}{}
+			uncachedIds[k] = true
 		}
 	}
 
-	remainingDocs, err := i.Loader(uncachedIds, updatedAfter)
-	if err != nil {
-		return nil, err
-	}
-
-	for k, v := range remainingDocs {
-		// should be unnecessary but loaders may not perfectly filter
-		if v.UpdatedAt > updatedAfter {
-			docs[k] = v
+	i.docs.DoWithMap(func(m du.GenericMap) {
+		var doc Document
+		var ok bool
+		for k := range uncachedIds {
+			doc, ok = m[k].(Document)
+			if !ok {
+				continue
+			}
+			if doc.UpdatedAt > updatedAfter {
+				docs[k] = doc
+				i.cache.Add(k, doc)
+			}
 		}
-	}
+	})
 
 	return docs, nil
 }
@@ -173,7 +174,7 @@ func (i *Index) Keys() IDSet {
 	keys := IDSet{}
 	i.docs.DoWithMap(func(m du.GenericMap) {
 		for k := range m {
-			keys[k] = struct{}{}
+			keys[k] = true
 		}
 	})
 	return keys
@@ -183,7 +184,7 @@ func (i *Index) Keys() IDSet {
 func (i *Index) LRUKeys() IDSet {
 	keys := IDSet{}
 	for _, k := range i.cache.Keys() {
-		keys[k.(string)] = struct{}{}
+		keys[k.(string)] = true
 	}
 	return keys
 }

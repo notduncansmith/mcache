@@ -35,7 +35,7 @@ func NewTombstone(id string) Tombstone {
 }
 
 // IDSet is an emulated Set (map of strings to empty structs) of document ID
-type IDSet = map[string]struct{}
+type IDSet = map[string]bool
 
 // DocSet is a map of document IDs to documents
 type DocSet = map[string]Document
@@ -53,7 +53,7 @@ func NewDocSet(docs ...Document) DocSet {
 func NewIDSet(ids ...string) IDSet {
 	idset := IDSet{}
 	for _, id := range ids {
-		idset[id] = struct{}{}
+		idset[id] = true
 	}
 	return idset
 }

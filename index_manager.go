@@ -22,11 +22,10 @@ type IndexManager struct {
 	maxIndexSize  int
 	lruCacheSize  int
 	Indexes       map[string]*Index
-	Loader
 }
 
 // NewIndexManager initializes an IndexManager at the given path
-func NewIndexManager(config Config, loader Loader) *IndexManager {
+func NewIndexManager(config Config) *IndexManager {
 	return &IndexManager{
 		RW:            mutable.NewRW("IndexManager:" + config.DataDir),
 		path:          config.DataDir,
@@ -34,7 +33,6 @@ func NewIndexManager(config Config, loader Loader) *IndexManager {
 		maxIndexSize:  config.MaxIndexSize,
 		lruCacheSize:  config.LRUCacheSize,
 		Indexes:       map[string]*Index{},
-		Loader:        loader,
 	}
 }
 
@@ -51,7 +49,7 @@ func (m *IndexManager) Open(id string) (*Index, error) {
 		return nil, fmt.Errorf("Failed to open Duramap: %v", err)
 	}
 
-	i, err = NewIndex(id, docs, m.Loader, m.lruCacheSize)
+	i, err = NewIndex(id, docs, m.lruCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize index: %v", err)
 	}

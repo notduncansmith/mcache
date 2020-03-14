@@ -9,6 +9,7 @@ require (
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/graphql-go/graphql v0.7.9 // indirect
 	github.com/hashicorp/golang-lru v0.5.4
+	github.com/julienschmidt/httprouter v1.3.0
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/notduncansmith/duramap v0.0.0-20200210002654-444af415bf0d
 	github.com/notduncansmith/mutable v0.0.0-20191105072558-a13a78d07b91
