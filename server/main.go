@@ -195,7 +195,7 @@ func startSSE(ww *http.ResponseWriter, msgs messageFeed, done chan bool) {
 			if !open {
 				fmt.Println("Outgoing message channel closed")
 				f.Flush()
-				break
+				return
 			}
 			bz := make([]byte, len(msg)+prefixLen+2)
 			copy(bz[:prefixLen], prefix)
