@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/notduncansmith/bbq"
 	"github.com/notduncansmith/mcache"
 )
 
@@ -27,6 +30,7 @@ import (
 
 type ck string
 type genericMap map[string]interface{}
+type messageFeed chan []byte
 
 func main() {
 	now := time.Now()
@@ -60,7 +64,17 @@ func main() {
 			badRequest(&w, "Invalid updatedAfter ("+updatedAfterStr+")")
 			return
 		}
-		w.WriteHeader(200)
+		conn, err := m.Connect(indexID, manifestID)
+		if err != nil {
+			badRequest(&w, "Unabled to connect to index/manifest ("+indexID+", "+manifestID+"): "+err.Error())
+			return
+		}
+		notify := w.(http.CloseNotifier).CloseNotify()
+		go func() {
+			<-notify
+			conn.Disconnect()
+		}()
+
 		docs, err := m.Query(indexID, manifestID, updatedAfter)
 		if err != nil {
 			if strings.Contains(err.Error(), "No index") {
@@ -70,11 +84,68 @@ func main() {
 			unknownError(&w, err)
 			return
 		}
-		/*
-			TODO:
-				- Connect() and give channel to startSSE
-		*/
+
+		outgoing := make(messageFeed, 16384)
+		q := bbq.NewBatchQueue(func(items []interface{}) error {
+			for _, item := range items {
+				bz, err := json.Marshal(item)
+				if err != nil {
+					fmt.Printf("Error writing update: %+v\n", err)
+					continue
+				}
+				outgoing <- bz
+			}
+			return nil
+		}, bbq.BatchQueueOptions{FlushTime: 3 * time.Second, FlushCount: 10})
+		done := make(chan bool)
+		q.Enqueue(docs)
+		q.FlushNow()
+		startSSE(&w, outgoing, done)
+
+		defer close(outgoing)
+		defer q.FlushNow()
+
+		for {
+			select {
+			case docs, open := <-conn.ChangeFeed:
+				if !open {
+					return
+				}
+				q.Enqueue(docs)
+				fmt.Printf("Enqueued changes: %+v", docs)
+			case <-done:
+				err := conn.Disconnect()
+				if err != nil {
+					fmt.Printf("Error disconnecting: %+v", err)
+				}
+				return
+			default:
+				q.FlushNow()
+			}
+		}
 	}))
+
+	router.POST("/docs", requireToken(func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		indexID := getCtx(r, "indexID").(string)
+		bodyBz, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			badRequest(&w, "Error reading request body: "+err.Error())
+			return
+		}
+		docs := mcache.DocSet{}
+		if err = json.Unmarshal(bodyBz, &docs); err != nil {
+			badRequest(&w, "Error decoding request body: "+err.Error())
+			return
+		}
+		if err = m.Update(indexID, docs); err != nil {
+			unknownError(&w, err)
+			return
+		}
+		w.WriteHeader(200)
+		w.Write([]byte("Updated"))
+	}))
+
+	http.ListenAndServe(":1337", router)
 }
 
 func requireToken(next httprouter.Handle) httprouter.Handle {
@@ -99,6 +170,48 @@ func getToken(r *http.Request) string {
 		token = authVals[0]
 	}
 	return token
+}
+
+func startSSE(ww *http.ResponseWriter, msgs messageFeed, done chan bool) {
+	w := *ww
+	f, ok := w.(http.Flusher)
+	if !ok {
+		badRequest(ww, "Streaming unsupported")
+		done <- true
+		return
+	}
+	// Set the headers related to event streaming.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	f.Flush()
+
+	prefix := []byte("data: ")
+	prefixLen := len(prefix)
+	go func() {
+		for {
+			msg, open := <-msgs
+			if !open {
+				fmt.Println("Outgoing message channel closed")
+				f.Flush()
+				break
+			}
+			bz := make([]byte, len(msg)+prefixLen+2)
+			copy(bz[:prefixLen], prefix)
+			copy(bz[prefixLen:], msg)
+			copy(bz[len(msg)+prefixLen:], "\n\n")
+			fmt.Printf("Writing bz: %v\n", string(bz))
+			count, err := w.Write(bz)
+			if err != nil {
+				fmt.Printf("Error writing: %v\n", err)
+				break
+			}
+			fmt.Printf("Flushing %v bytes\n", count)
+			f.Flush()
+		}
+		done <- true
+	}()
 }
 
 func setCtx(r *http.Request, kv genericMap) *http.Request {
@@ -130,33 +243,4 @@ func notFound(w *http.ResponseWriter) {
 func unknownError(w *http.ResponseWriter, err error) {
 	(*w).WriteHeader(500)
 	(*w).Write([]byte("Unknown error: " + err.Error()))
-}
-
-func startSSE(ww *http.ResponseWriter, msgs chan []byte) error {
-	w := *ww
-	f, ok := w.(http.Flusher)
-	if !ok {
-		return errors.New("Streaming unsupported")
-	}
-
-	// Set the headers related to event streaming.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Transfer-Encoding", "chunked")
-
-	prefix := []byte("data: ")
-	prefixLen := len(prefix)
-	for msg := range msgs {
-		bz := make([]byte, len(msg)+prefixLen)
-		copy(bz[:prefixLen], prefix)
-		copy(bz[prefixLen:], msg)
-		_, err := w.Write(bz)
-		if err != nil {
-			return err
-		}
-		f.Flush()
-	}
-
-	return nil
 }

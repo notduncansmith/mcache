@@ -10,9 +10,10 @@ import (
 
 // Index represents a collection of documents managed by the cache
 type Index struct {
-	ID    string
-	docs  *du.Duramap
-	cache *lru.TwoQueueCache
+	ID      string
+	docs    *du.Duramap
+	cache   *lru.TwoQueueCache
+	streams map[string]DocStream
 }
 
 // NewIndex returns a new Index
@@ -22,12 +23,14 @@ func NewIndex(id string, docs *du.Duramap, cacheSize int) (*Index, error) {
 		return nil, err
 	}
 
-	return &Index{id, docs, cache}, nil
+	return &Index{id, docs, cache, map[string]DocStream{}}, nil
 }
 
 // Update updates the index documents with the latest versions
 func (i *Index) Update(docs DocSet) error {
-	return i.docs.UpdateMap(func(tx *du.Tx) error {
+	updated := DocSet{}
+
+	i.docs.UpdateMap(func(tx *du.Tx) error {
 		for _, d := range docs {
 			stored := tx.Get(d.ID)
 			if stored == nil {
@@ -40,14 +43,22 @@ func (i *Index) Update(docs DocSet) error {
 				fmt.Printf("Unable to decode document: %+v", stored)
 				continue
 			}
+
 			if storedDoc.UpdatedAt < d.UpdatedAt {
 				tx.Set(d.ID, d)
 				i.cache.Add(d.ID, d)
+				updated[d.ID] = d
 			}
 		}
 
 		return nil
 	})
+
+	for _, s := range i.streams {
+		s.Update(updated)
+	}
+
+	return nil
 }
 
 // Get gets the index document with the given ID
@@ -126,6 +137,16 @@ func (i *Index) Query(manifestID string, updatedAfter Timestamp) (DocSet, error)
 	}
 
 	return i.LoadDocuments(m.DocumentIDs, updatedAfter)
+}
+
+// Connect returns a Connection to the DocStream for a given manifestID
+func (i *Index) Connect(manifestID string) *Connection {
+	stream := i.streams[manifestID]
+	if stream.ManifestID == "" {
+		stream = *NewDocStream(i, manifestID)
+		i.streams[manifestID] = stream
+	}
+	return stream.Connect()
 }
 
 // LoadDocuments will, for a given set of document IDs, query the LRU cache for the latest matching versions and fetch the rest from the store

@@ -92,3 +92,12 @@ func (m *MCache) SoftDelete(indexID string, ids IDSet) error {
 	}
 	return index.SoftDelete(ids)
 }
+
+// Connect returns a Connection to the DocStream for a given manifestID in the index with the given ID
+func (m *MCache) Connect(indexID string, manifestID string) (*Connection, error) {
+	index := m.im.GetIndex(indexID)
+	if index == nil {
+		return nil, fmt.Errorf("No index %v found", indexID)
+	}
+	return index.Connect(manifestID), nil
+}
