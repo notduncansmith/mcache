@@ -28,7 +28,7 @@ import (
 		- MONGODB_CONNECTION_STRING ("")
 */
 
-type ck string
+type ctxKey string
 type genericMap map[string]interface{}
 type messageFeed chan []byte
 
@@ -220,13 +220,13 @@ func startSSE(ww *http.ResponseWriter, msgs messageFeed, done chan bool) {
 
 func setCtx(r *http.Request, kv genericMap) *http.Request {
 	for k, v := range kv {
-		r = r.WithContext(context.WithValue(r.Context(), ck(k), v))
+		r = r.WithContext(context.WithValue(r.Context(), ctxKey(k), v))
 	}
 	return r
 }
 
 func getCtx(r *http.Request, k string) interface{} {
-	return r.Context().Value(ck(k))
+	return r.Context().Value(ctxKey(k))
 }
 
 func badRequest(w *http.ResponseWriter, message string) {
