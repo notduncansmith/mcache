@@ -11,8 +11,8 @@ import (
 	"github.com/notduncansmith/mutable"
 )
 
-const IndexFilenamePrefix = "mcache-index-"
-const IndexFilenameSuffix = ".db"
+const indexFilenamePrefix = "mcache-index-"
+const indexFilenameSuffix = ".db"
 
 // IndexManager manages a collection of Indexes
 type IndexManager struct {
@@ -44,7 +44,7 @@ func (m *IndexManager) Open(id string) (*Index, error) {
 		return i, nil
 	}
 
-	docs, err := du.NewDuramap(filepath.Join(m.path, IndexFilenamePrefix+id+IndexFilenameSuffix), id, nil)
+	docs, err := du.NewDuramap(filepath.Join(m.path, indexFilenamePrefix+id+indexFilenameSuffix), id, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to open Duramap: %v", err)
 	}
@@ -91,7 +91,7 @@ func (m *IndexManager) Scan() error {
 	}
 
 	for i, file := range files {
-		if !strings.HasPrefix(file.Name(), IndexFilenamePrefix) {
+		if !strings.HasPrefix(file.Name(), indexFilenamePrefix) {
 			fmt.Printf("Skipping non-index file %v\n", file.Name())
 			continue
 		}
@@ -110,5 +110,5 @@ func errUnreachable(path string, reason string) error {
 }
 
 func indexIDFromFilename(name string) string {
-	return strings.Replace(strings.Replace(name, IndexFilenamePrefix, "", 1), IndexFilenameSuffix, "", 1)
+	return strings.Replace(strings.Replace(name, indexFilenamePrefix, "", 1), indexFilenameSuffix, "", 1)
 }
