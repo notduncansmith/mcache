@@ -58,7 +58,7 @@ func (m *MCache) Get(indexID string, docID string) (*Document, error) {
 }
 
 // GetAll gets all documents in an index
-func (m *MCache) GetAll(indexID string) (DocSet, error) {
+func (m *MCache) GetAll(indexID string) (*DocSet, error) {
 	index := m.im.GetIndex(indexID)
 	if index == nil {
 		return nil, fmt.Errorf("No index %v found", indexID)
@@ -67,7 +67,7 @@ func (m *MCache) GetAll(indexID string) (DocSet, error) {
 }
 
 // Query gets all index documents matching a given manifest that were updated after a given timestamp
-func (m *MCache) Query(indexID string, manifestID string, updatedAfter Timestamp) (DocSet, error) {
+func (m *MCache) Query(indexID string, manifestID string, updatedAfter Timestamp) (*DocSet, error) {
 	index := m.im.GetIndex(indexID)
 	if index == nil {
 		return nil, fmt.Errorf("No index %v found", indexID)
@@ -76,7 +76,7 @@ func (m *MCache) Query(indexID string, manifestID string, updatedAfter Timestamp
 }
 
 // Update applies any given documents as patches to documents in the given index
-func (m *MCache) Update(indexID string, docs DocSet) error {
+func (m *MCache) Update(indexID string, docs *DocSet) error {
 	index := m.im.GetIndex(indexID)
 	if index == nil {
 		return fmt.Errorf("No index %v found", indexID)

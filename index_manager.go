@@ -40,7 +40,7 @@ func NewIndexManager(config Config) *IndexManager {
 func (m *IndexManager) Open(id string) (*Index, error) {
 	i := m.GetIndex(id)
 	if i != nil {
-		fmt.Printf("Index %v already open", id)
+		fmt.Printf("Index %v already open\n", id)
 		return i, nil
 	}
 
@@ -78,24 +78,24 @@ func (m *IndexManager) GetIndex(id string) *Index {
 func (m *IndexManager) Scan() error {
 	_, err := os.Stat(m.path)
 	if err != nil {
-		fmt.Printf("Creating %v", m.path)
+		fmt.Printf("Creating %v\n", m.path)
 		if err = os.MkdirAll(m.path, 0700); err != nil {
 			return errUnreachable(m.path, err.Error())
 		}
 	}
 
 	files, _ := ioutil.ReadDir(m.path)
-	fmt.Printf("Scanned path %v, found %v files", m.path, len(files))
+	fmt.Printf("Scanned path %v, found %v files\n", m.path, len(files))
 	if len(files) == 0 {
 		return nil
 	}
 
 	for i, file := range files {
 		if !strings.HasPrefix(file.Name(), IndexFilenamePrefix) {
-			fmt.Printf("Skipping non-index file %v", file.Name())
+			fmt.Printf("Skipping non-index file %v\n", file.Name())
 			continue
 		}
-		fmt.Printf("Loading index #%v from %v", i, file.Name())
+		fmt.Printf("Loading index #%v from %v\n", i, file.Name())
 		_, err := m.Open(indexIDFromFilename(file.Name()))
 		if err != nil {
 			return fmt.Errorf("Error loading index #%v from %v: %v", i, file.Name(), err)

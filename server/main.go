@@ -40,25 +40,27 @@ func main() {
 		DocumentIDs: mcache.NewIDSet("a", "b"),
 	})
 	docs := mcache.DocSet{
-		"a":         mcache.Document{ID: "a", UpdatedAt: now.Add(-3 * time.Minute).Unix(), Body: []byte("Document (a)")},
-		"b":         mcache.Document{ID: "b", UpdatedAt: now.Add(-2 * time.Minute).Unix(), Body: []byte("Document (b)")},
-		"c":         mcache.Document{ID: "c", UpdatedAt: now.Unix(), Body: []byte("Document (c)")},
-		"hardcoded": *manifestDoc,
+		Docs: map[string]mcache.Document{
+			"a":         mcache.Document{ID: "a", UpdatedAt: now.Add(-3 * time.Minute).Unix(), Body: []byte("Document (a)")},
+			"b":         mcache.Document{ID: "b", UpdatedAt: now.Add(-2 * time.Minute).Unix(), Body: []byte("Document (b)")},
+			"c":         mcache.Document{ID: "c", UpdatedAt: now.Unix(), Body: []byte("Document (c)")},
+			"hardcoded": *manifestDoc,
+		},
 	}
 	m, err := mcache.NewMCache(mcache.DefaultConfig)
 	if err != nil {
 		panic(err)
 	}
 	idx, _ := m.CreateIndex("dev")
-	err = idx.Update(docs)
+	err = idx.Update(&docs)
 	if err != nil {
 		panic(err)
 	}
 	router := httprouter.New()
-	router.GET("/docs/:updatedAfter", requireToken(func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	router.GET("/docs", requireToken(func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		indexID := getCtx(r, "indexID").(string)
 		manifestID := getCtx(r, "manifestID").(string)
-		updatedAfterStr := ps.ByName("updatedAfter")
+		updatedAfterStr := r.URL.Query().Get("updatedAfter")
 		updatedAfter, err := strconv.ParseInt(updatedAfterStr, 10, 64)
 		if err != nil {
 			badRequest(&w, "Invalid updatedAfter ("+updatedAfterStr+")")
@@ -137,7 +139,7 @@ func main() {
 			badRequest(&w, "Error decoding request body: "+err.Error())
 			return
 		}
-		if err = m.Update(indexID, docs); err != nil {
+		if err = m.Update(indexID, &docs); err != nil {
 			unknownError(&w, err)
 			return
 		}
@@ -168,6 +170,8 @@ func getToken(r *http.Request) string {
 	token := ""
 	if len(authVals) > 0 {
 		token = authVals[0]
+	} else {
+		token = r.URL.Query().Get("token")
 	}
 	return token
 }

@@ -2,6 +2,7 @@ package mcache
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -35,25 +36,45 @@ func NewTombstone(id string) Tombstone {
 }
 
 // IDSet is an emulated Set (map of strings to empty structs) of document ID
-type IDSet = map[string]bool
+type IDSet map[string]SetEntry
+
+// A SetEntry is an empty struct that represents membership in a set
+type SetEntry struct{}
 
 // DocSet is a map of document IDs to documents
-type DocSet = map[string]Document
+type DocSet struct {
+	Docs  map[string]Document
+	Start Timestamp
+	End   Timestamp
+}
 
 // NewDocSet returns a DocSet for a set of docs
-func NewDocSet(docs ...Document) DocSet {
-	docset := DocSet{}
-	for _, d := range docs {
-		docset[d.ID] = d
+func NewDocSet(docs ...Document) *DocSet {
+	docset := &DocSet{Docs: map[string]Document{}, Start: 0, End: 0}
+	for _, v := range docs {
+		docset.Add(v)
 	}
 	return docset
+}
+
+// Add adds a Document to the DocSet
+func (d *DocSet) Add(doc Document) *DocSet {
+	fmt.Println(*d)
+	if d.Start == 0 || doc.UpdatedAt < d.Start {
+		d.Start = doc.UpdatedAt
+	}
+	if doc.UpdatedAt > d.End {
+		d.End = doc.UpdatedAt
+	}
+	d.Docs[doc.ID] = doc
+	return d
 }
 
 // NewIDSet returns an IDSet for a set of IDs
 func NewIDSet(ids ...string) IDSet {
 	idset := IDSet{}
 	for _, id := range ids {
-		idset[id] = true
+		idset[id] = SetEntry{}
 	}
 	return idset
 }

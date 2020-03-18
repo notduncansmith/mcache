@@ -47,7 +47,7 @@ func NewDocStream(index *Index, manifestID string) *DocStream {
 }
 
 // Update broadcasts a changed set of docs to any connections
-func (s *DocStream) Update(docs DocSet) {
+func (s *DocStream) Update(docs *DocSet) {
 	s.DoWithRLock(func() {
 		for _, c := range s.Connections {
 			manifest, err := s.Index.GetManifest(s.ManifestID)
@@ -56,12 +56,12 @@ func (s *DocStream) Update(docs DocSet) {
 				continue
 			}
 			connDocs := DocSet{}
-			for id, doc := range docs {
-				if manifest.DocumentIDs[id] {
-					connDocs[id] = doc
+			for id, doc := range docs.Docs {
+				if _, ok := manifest.DocumentIDs[id]; ok {
+					connDocs.Add(doc)
 				}
 			}
-			if len(connDocs) > 0 {
+			if len(connDocs.Docs) > 0 {
 				c.ChangeFeed <- connDocs
 			}
 		}

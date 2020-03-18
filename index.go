@@ -27,11 +27,11 @@ func NewIndex(id string, docs *du.Duramap, cacheSize int) (*Index, error) {
 }
 
 // Update updates the index documents with the latest versions
-func (i *Index) Update(docs DocSet) error {
-	updated := DocSet{}
+func (i *Index) Update(docs *DocSet) error {
+	updated := NewDocSet()
 
 	i.docs.UpdateMap(func(tx *du.Tx) error {
-		for _, d := range docs {
+		for _, d := range docs.Docs {
 			stored := tx.Get(d.ID)
 			if stored == nil {
 				tx.Set(d.ID, d)
@@ -47,7 +47,7 @@ func (i *Index) Update(docs DocSet) error {
 			if storedDoc.UpdatedAt < d.UpdatedAt {
 				tx.Set(d.ID, d)
 				i.cache.Add(d.ID, d)
-				updated[d.ID] = d
+				updated.Add(d)
 			}
 		}
 
@@ -80,15 +80,16 @@ func (i *Index) Get(id string) (doc *Document, err error) {
 }
 
 // GetAll gets all the index documents
-func (i *Index) GetAll() (docs DocSet, err error) {
+func (i *Index) GetAll() (docs *DocSet, err error) {
+	docs = NewDocSet()
 	i.docs.DoWithMap(func(m du.GenericMap) {
-		for k, v := range m {
+		for _, v := range m {
 			stored, ok := v.(Document)
 			if !ok {
 				fmt.Printf("Unable to decode document %+v", v)
 				continue
 			}
-			docs[k] = stored
+			docs.Add(stored)
 		}
 	})
 	return
@@ -114,11 +115,11 @@ func (i *Index) GetManifest(manifestDocumentID string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Unable to load manifest %v: %v", manifestDocumentID, err)
 	}
-	if docs == nil || len(docs) == 0 {
+	if docs == nil || len(docs.Docs) == 0 {
 		return nil, fmt.Errorf("Unable to load manifest %v: not found", manifestDocumentID)
 	}
 
-	manifestDocument := docs[manifestDocumentID]
+	manifestDocument := docs.Docs[manifestDocumentID]
 	docIds := IDSet{}
 
 	if err = json.Unmarshal(manifestDocument.Body, &docIds); err != nil {
@@ -130,7 +131,7 @@ func (i *Index) GetManifest(manifestDocumentID string) (*Manifest, error) {
 }
 
 // Query returns any documents matching the manifest with the given id that were updated after the given timestamp
-func (i *Index) Query(manifestID string, updatedAfter Timestamp) (DocSet, error) {
+func (i *Index) Query(manifestID string, updatedAfter Timestamp) (*DocSet, error) {
 	m, err := i.GetManifest(manifestID)
 	if err != nil {
 		return nil, err
@@ -150,25 +151,25 @@ func (i *Index) Connect(manifestID string) *Connection {
 }
 
 // LoadDocuments will, for a given set of document IDs, query the LRU cache for the latest matching versions and fetch the rest from the store
-func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (DocSet, error) {
-	docs := DocSet{}
+func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (*DocSet, error) {
+	docs := NewDocSet()
 	uncachedIds := IDSet{}
 
 	for k := range docIDs {
-		if i.cache.Contains(k) {
-			cached, ok := i.cache.Get(k)
-			if !ok {
-				panic("Failed to get doc from cache")
-			}
-			doc, ok := cached.(Document)
-			if !ok {
-				panic("Non-document found in cache")
-			}
-			if doc.UpdatedAt > updatedAfter {
-				docs[k] = doc
-			}
-		} else {
-			uncachedIds[k] = true
+		if !i.cache.Contains(k) {
+			uncachedIds[k] = SetEntry{}
+			continue
+		}
+		cached, ok := i.cache.Get(k)
+		if !ok {
+			panic("Failed to get doc from cache")
+		}
+		doc, ok := cached.(Document)
+		if !ok {
+			panic("Non-document found in cache")
+		}
+		if doc.UpdatedAt >= updatedAfter {
+			docs.Add(doc)
 		}
 	}
 
@@ -181,7 +182,7 @@ func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (DocSet, err
 				continue
 			}
 			if doc.UpdatedAt > updatedAfter {
-				docs[k] = doc
+				docs.Add(doc)
 				i.cache.Add(k, doc)
 			}
 		}
@@ -195,7 +196,7 @@ func (i *Index) Keys() IDSet {
 	keys := IDSet{}
 	i.docs.DoWithMap(func(m du.GenericMap) {
 		for k := range m {
-			keys[k] = true
+			keys[k] = SetEntry{}
 		}
 	})
 	return keys
@@ -205,7 +206,7 @@ func (i *Index) Keys() IDSet {
 func (i *Index) LRUKeys() IDSet {
 	keys := IDSet{}
 	for _, k := range i.cache.Keys() {
-		keys[k.(string)] = true
+		keys[k.(string)] = SetEntry{}
 	}
 	return keys
 }

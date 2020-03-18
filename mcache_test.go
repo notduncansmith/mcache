@@ -17,12 +17,12 @@ func TestMCacheRoundtrip(t *testing.T) {
 		UpdatedAt:   now.Add(-1 * time.Minute).Unix(),
 		DocumentIDs: NewIDSet("a", "b"),
 	})
-	docs := DocSet{
-		"a":   Document{ID: "a", UpdatedAt: now.Add(-3 * time.Minute).Unix()},
-		"b":   Document{ID: "b", UpdatedAt: now.Add(-2 * time.Minute).Unix()},
-		"c":   Document{ID: "c", UpdatedAt: now.Unix()},
-		"m:a": *manifestDoc,
-	}
+	docs := NewDocSet(
+		Document{ID: "a", UpdatedAt: now.Add(-3 * time.Minute).Unix()},
+		Document{ID: "b", UpdatedAt: now.Add(-2 * time.Minute).Unix()},
+		Document{ID: "c", UpdatedAt: now.Unix()},
+		*manifestDoc,
+	)
 	config := DefaultConfig
 	config.DataDir = "./.tmp"
 	m, err := NewMCache(config)
@@ -43,14 +43,14 @@ func TestMCacheRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to query index: %v", err)
 	}
-	expected := NewDocSet(docs["a"], docs["b"])
+	expected := NewDocSet(docs.Docs["a"], docs.Docs["b"])
 	expectDocs(t, expected, results)
 
 	manifest, err := idx.GetManifest("m:a")
 	if err != nil {
 		t.Fatalf("Failed to get manifest: %v", err)
 	}
-	manifest.DocumentIDs["c"] = true
+	manifest.DocumentIDs["c"] = SetEntry{}
 	manifest.UpdatedAt = time.Now().Unix()
 	newManifestDoc, err := EncodeManifest(*manifest)
 	if err != nil {
@@ -64,12 +64,12 @@ func TestMCacheRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to query index: %v", err)
 	}
-	expected = NewDocSet(docs["a"], docs["b"], docs["c"])
+	expected = NewDocSet(docs.Docs["a"], docs.Docs["b"], docs.Docs["c"])
 	expectDocs(t, expected, results)
 }
 
-func expectDocs(t *testing.T, expected DocSet, actual DocSet) {
-	if diff := cmp.Diff(expected, actual); diff != "" {
+func expectDocs(t *testing.T, expected *DocSet, actual *DocSet) {
+	if diff := cmp.Diff(*expected, *actual); diff != "" {
 		t.Fatalf("Documents mismatch (-expected +actual):\n%s", diff)
 	}
 }
