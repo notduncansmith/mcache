@@ -6,7 +6,7 @@ Manifest Cache (or MCache) is a hybrid on-disk/in-memory document store written 
 
 MCache stores **documents**, which are opaque blobs decorated with `id` and `updatedAt` properties of types `string` and `int64` respectively, in independent collections called **indexes**. Special documents in an index called **manifests** hold lists of other document IDs. A manifest may contain references to any other documents within the same index.
 
-Whenever a change is made on the primary data store, this change must be reflected to MCache through a GraphQL mutation. Updates to multiple documents in the same index may be batched in a single request. Documents must be provided in full (because MCache is unaware of the encoding/structure of document bodies, it cannot merge deltas).
+Whenever a change is made on the primary data store, this change must be reflected to MCache through an HTTP POST request. Updates to multiple documents in the same index may be batched in a single request. Documents must be provided in full (because MCache is unaware of the encoding/structure of document bodies, it cannot merge deltas).
 
 A query to MCache for the latest changes includes a manifest ID and the timestamp of the client's most recently-updated document. That query will return any documents in the manifest whose MCache entries have been updated since that timestamp. Documents are always delivered in full.
 
