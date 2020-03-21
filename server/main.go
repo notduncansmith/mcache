@@ -98,7 +98,7 @@ func main() {
 				outgoing <- bz
 			}
 			return nil
-		}, bbq.BatchQueueOptions{FlushTime: 3 * time.Second, FlushCount: 10})
+		}, bbq.BatchQueueOptions{FlushTime: time.Second, FlushCount: 10})
 		done := make(chan bool)
 		q.Enqueue(docs)
 		q.FlushNow()
@@ -114,11 +114,11 @@ func main() {
 					return
 				}
 				q.Enqueue(docs)
-				fmt.Printf("Enqueued changes: %+v", docs)
+				fmt.Printf("Enqueued changes: %+v\n", docs)
 			case <-done:
 				err := conn.Disconnect()
 				if err != nil {
-					fmt.Printf("Error disconnecting: %+v", err)
+					fmt.Printf("Error disconnecting: %+v\n", err)
 				}
 				return
 			default:
