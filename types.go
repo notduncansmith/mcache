@@ -2,37 +2,17 @@ package mcache
 
 import (
 	"encoding/json"
-	"fmt"
-	"time"
 )
 
 // Timestamp is a Unix milliseconds offset
 type Timestamp = int64
-
-// A Stub is a representation of a document in an index that does not contain the full body
-type Stub struct {
-	ID        string    `json:"id"`
-	UpdatedAt Timestamp `json:"updatedAt"`
-}
 
 // Document is a resource that can be accessed by users
 type Document struct {
 	ID        string    `json:"id"`
 	UpdatedAt Timestamp `json:"updatedAt"`
 	Body      []byte    `json:"body"`
-}
-
-// Tombstone represents a document that was deleted
-type Tombstone struct {
-	ID        string    `json:"id"`
-	UpdatedAt Timestamp `json:"updatedAt"`
-	Body      []byte    `json:"body"`
 	Deleted   bool      `json:"deleted"`
-}
-
-// NewTombstone returns a Tombstone with the given id
-func NewTombstone(id string) Tombstone {
-	return Tombstone{id, time.Now().Unix(), []byte{}, true}
 }
 
 // IDSet is an emulated Set (map of strings to empty structs) of document ID
@@ -58,15 +38,24 @@ func NewDocSet(docs ...Document) *DocSet {
 }
 
 // Add adds a Document to the DocSet
-func (d *DocSet) Add(doc Document) *DocSet {
-	fmt.Println(*d)
-	if d.Start == 0 || doc.UpdatedAt < d.Start {
-		d.Start = doc.UpdatedAt
+func (d *DocSet) Add(docs ...Document) *DocSet {
+	for _, doc := range docs {
+		if d.Start == 0 || doc.UpdatedAt < d.Start {
+			d.Start = doc.UpdatedAt
+		}
+		if doc.UpdatedAt > d.End {
+			d.End = doc.UpdatedAt
+		}
+		d.Docs[doc.ID] = doc
 	}
-	if doc.UpdatedAt > d.End {
-		d.End = doc.UpdatedAt
+	return d
+}
+
+// Merge adds all Documents in a given DocSet to the DocSet
+func (d *DocSet) Merge(docs *DocSet) *DocSet {
+	for _, doc := range docs.Docs {
+		d.Add(doc)
 	}
-	d.Docs[doc.ID] = doc
 	return d
 }
 
@@ -86,8 +75,13 @@ type Manifest struct {
 	DocumentIDs IDSet  `json:"documentIDs"`
 }
 
+// Add a document to the manifest
+func (m *Manifest) Add(documentID string) {
+	m.DocumentIDs[documentID] = SetEntry{}
+}
+
 // EncodeManifest returns a Document that stores a Manifest
-func EncodeManifest(m Manifest) (*Document, error) {
+func EncodeManifest(m *Manifest) (*Document, error) {
 	body, err := json.Marshal(m.DocumentIDs)
 	if err != nil {
 		return nil, err

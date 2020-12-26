@@ -8,6 +8,8 @@ type Config struct {
 	MaxIndexCount int
 	MaxIndexSize  int
 	DataDir       string
+	Host          string
+	Port          string
 }
 
 // DefaultConfig describes a default configuration for MCache
@@ -15,7 +17,7 @@ var DefaultConfig = Config{
 	LRUCacheSize:  10000,
 	MaxIndexCount: 100000,
 	MaxIndexSize:  100000,
-	DataDir:       "./.tmp",
+	DataDir:       "./.mcache",
 }
 
 // MCache is an HTTP-accessible object cache
@@ -32,6 +34,11 @@ func NewMCache(config Config) (*MCache, error) {
 		return nil, err
 	}
 	return &MCache{im, config}, nil
+}
+
+// GetIndex returns an internal Index object
+func (m *MCache) GetIndex(id string) *Index {
+	return m.im.GetIndex(id)
 }
 
 // CreateIndex creates a new index with the given ID
@@ -75,29 +82,20 @@ func (m *MCache) Query(indexID string, manifestID string, updatedAfter Timestamp
 	return index.Query(manifestID, updatedAfter)
 }
 
-// Update applies any given documents as patches to documents in the given index
-func (m *MCache) Update(indexID string, docs *DocSet) error {
+// Update updates the index with the given documents
+func (m *MCache) Update(indexID string, docs *DocSet) (*DocSet, error) {
 	index := m.im.GetIndex(indexID)
 	if index == nil {
-		return fmt.Errorf("No index %v found", indexID)
+		return nil, fmt.Errorf("No index %v found", indexID)
 	}
 	return index.Update(docs)
 }
 
 // SoftDelete overwrites documents in the given index with the given IDs with tombstone values
-func (m *MCache) SoftDelete(indexID string, ids IDSet) error {
-	index := m.im.GetIndex(indexID)
-	if index == nil {
-		return fmt.Errorf("No index %v found", indexID)
-	}
-	return index.SoftDelete(ids)
-}
-
-// Connect returns a Connection to the DocStream for a given manifestID in the index with the given ID
-func (m *MCache) Connect(indexID string, manifestID string) (*Connection, error) {
+func (m *MCache) SoftDelete(indexID string, ids IDSet) (*DocSet, error) {
 	index := m.im.GetIndex(indexID)
 	if index == nil {
 		return nil, fmt.Errorf("No index %v found", indexID)
 	}
-	return index.Connect(manifestID), nil
+	return index.SoftDelete(ids)
 }

@@ -8,68 +8,121 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+const testDataDir = "./.tmp"
+const testIndexName = "test"
+const testManifestName = "m:a&b"
+
 func TestMCacheRoundtrip(t *testing.T) {
-	os.RemoveAll("./.tmp")
-	defer os.RemoveAll("./.tmp")
+	os.RemoveAll(testDataDir + "/mcache-*")
+	defer os.RemoveAll(testDataDir + "/mcache-*")
 	now := time.Now()
-	manifestDoc, _ := EncodeManifest(Manifest{
-		ID:          "m:a",
+	manifestDoc, _ := EncodeManifest(&Manifest{
+		ID:          "m:a&b",
 		UpdatedAt:   now.Add(-1 * time.Minute).Unix(),
 		DocumentIDs: NewIDSet("a", "b"),
 	})
-	docs := NewDocSet(
-		Document{ID: "a", UpdatedAt: now.Add(-3 * time.Minute).Unix()},
-		Document{ID: "b", UpdatedAt: now.Add(-2 * time.Minute).Unix()},
-		Document{ID: "c", UpdatedAt: now.Unix()},
+	knownDocs := NewDocSet(
+		Document{ID: "a"},
+		Document{ID: "b"},
+		Document{ID: "c"},
 		*manifestDoc,
 	)
 	config := DefaultConfig
-	config.DataDir = "./.tmp"
+	config.DataDir = testDataDir
 	m, err := NewMCache(config)
 
 	if err != nil {
 		t.Fatalf("Failed to open mcache: %v", err)
 	}
+	m.im.Scan()
 
-	idx, err := m.CreateIndex("test")
+	idx, err := m.CreateIndex(testIndexName)
 	if err != nil {
 		t.Fatalf("Failed to open index: %v", err)
 	}
-	if err = idx.Update(docs); err != nil {
-		t.Fatalf("Failed to open index: %v", err)
-	}
-
-	results, err := idx.Query("m:a", now.Add(-4*time.Minute).Unix())
+	stored, err := idx.Update(knownDocs)
 	if err != nil {
-		t.Fatalf("Failed to query index: %v", err)
-	}
-	expected := NewDocSet(docs.Docs["a"], docs.Docs["b"])
-	expectDocs(t, expected, results)
-
-	manifest, err := idx.GetManifest("m:a")
-	if err != nil {
-		t.Fatalf("Failed to get manifest: %v", err)
-	}
-	manifest.DocumentIDs["c"] = SetEntry{}
-	manifest.UpdatedAt = time.Now().Unix()
-	newManifestDoc, err := EncodeManifest(*manifest)
-	if err != nil {
-		t.Fatalf("Failed to encode manifest: %v", err)
-	}
-	if err := idx.Update(NewDocSet(*newManifestDoc)); err != nil {
 		t.Fatalf("Failed to update index: %v", err)
 	}
 
-	results, err = idx.Query("m:a", now.Add(-4*time.Minute).Unix())
+	keys, err := m.Keys(idx.ID)
+	if diff := cmp.Diff(NewIDSet("a", "b", "c", testManifestName), keys); diff != "" {
+		t.Fatalf("Keys mismatch (-expected +actual):\n%s" + diff)
+	}
+
+	if diff := cmp.Diff(NewIDSet("a", "b", "c", testManifestName), idx.LRUKeys()); diff != "" {
+		t.Fatalf("LRU keys mismatch (-expected +actual):\n%s" + diff)
+	}
+
+	idx.cache.Remove("b")
+
+	if diff := cmp.Diff(NewIDSet("a", "c", testManifestName), idx.LRUKeys()); diff != "" {
+		t.Fatalf("LRU keys mismatch (-expected +actual):\n%s" + diff)
+	}
+
+	knownDocs.Merge(stored)
+
+	results, err := m.Query(testIndexName, testManifestName, now.Add(-1*time.Minute).Unix())
 	if err != nil {
 		t.Fatalf("Failed to query index: %v", err)
 	}
-	expected = NewDocSet(docs.Docs["a"], docs.Docs["b"], docs.Docs["c"])
+
+	expected := NewDocSet(knownDocs.Docs["a"], knownDocs.Docs["b"])
+	expectDocs(t, expected, results)
+
+	manifest, err := idx.GetManifest(testManifestName)
+	if err != nil {
+		t.Fatalf("Failed to get manifest: %v", err)
+	}
+
+	manifest.Add("c")
+	newManifestDoc, err := EncodeManifest(manifest)
+	if err != nil {
+		t.Fatalf("Failed to encode manifest: %v", err)
+	}
+	newManifest, err := DecodeManifest(*newManifestDoc)
+	if diff := cmp.Diff(NewIDSet("a", "b", "c"), newManifest.DocumentIDs); diff != "" {
+		t.Fatalf("Manifest keys mismatch (-expected +actual):\n%s" + diff)
+	}
+
+	stored, err = m.Update(testIndexName, NewDocSet(*newManifestDoc))
+	if err != nil {
+		t.Fatalf("Failed to update index: %v", err)
+	}
+
+	knownDocs.Merge(stored)
+
+	results, err = m.Query(testIndexName, testManifestName, now.Add(-1*time.Minute).Unix())
+	if err != nil {
+		t.Fatalf("Failed to query index: %v", err)
+	}
+	expected = NewDocSet(knownDocs.Docs["a"], knownDocs.Docs["b"], knownDocs.Docs["c"])
+	expectDocs(t, expected, results)
+
+	stored, err = m.SoftDelete(testIndexName, NewIDSet("c"))
+	if err != nil {
+		t.Fatalf("Failed to delete document from index: %v", err)
+	}
+
+	knownDocs.Merge(stored)
+
+	results, err = m.Query(testIndexName, testManifestName, now.Add(-1*time.Minute).Unix())
+	if err != nil {
+		t.Fatalf("Failed to query index: %v", err)
+	}
+	expected = NewDocSet(knownDocs.Docs["a"], knownDocs.Docs["b"], knownDocs.Docs["c"])
+	expectDocs(t, expected, results)
+
+	result, err := m.Get(idx.ID, "c")
+	expectDocs(t, NewDocSet(knownDocs.Docs["c"]), NewDocSet(*result))
+
+	expected = NewDocSet(knownDocs.Docs["a"], knownDocs.Docs["b"], knownDocs.Docs["c"], knownDocs.Docs[testManifestName])
+	results, err = m.GetAll(idx.ID)
 	expectDocs(t, expected, results)
 }
 
 func expectDocs(t *testing.T, expected *DocSet, actual *DocSet) {
-	if diff := cmp.Diff(*expected, *actual); diff != "" {
-		t.Fatalf("Documents mismatch (-expected +actual):\n%s", diff)
+	if diff := cmp.Diff(expected, actual); diff != "" {
+		panic("Documents mismatch (-expected +actual):\n%s" + diff)
 	}
 }

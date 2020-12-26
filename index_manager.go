@@ -40,7 +40,6 @@ func NewIndexManager(config Config) *IndexManager {
 func (m *IndexManager) Open(id string) (*Index, error) {
 	i := m.GetIndex(id)
 	if i != nil {
-		fmt.Printf("Index %v already open\n", id)
 		return i, nil
 	}
 
@@ -80,7 +79,7 @@ func (m *IndexManager) Scan() error {
 	if err != nil {
 		fmt.Printf("Creating %v\n", m.path)
 		if err = os.MkdirAll(m.path, 0700); err != nil {
-			return errUnreachable(m.path, err.Error())
+			return fmt.Errorf("File or directory %v cannot be opened (%v)", m.path, err.Error())
 		}
 	}
 
@@ -103,10 +102,6 @@ func (m *IndexManager) Scan() error {
 	}
 
 	return err
-}
-
-func errUnreachable(path string, reason string) error {
-	return fmt.Errorf("File or directory %v cannot be opened (%v)", path, reason)
 }
 
 func indexIDFromFilename(name string) string {

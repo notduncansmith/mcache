@@ -1,81 +1,45 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/julienschmidt/httprouter"
-	"github.com/notduncansmith/bbq"
 	"github.com/notduncansmith/mcache"
 )
 
-/*
-	Env vars:
-		- HOST ("")
-		- PORT (":1337")
-		- ADMIN_SECRET ("")
-		- XWT_PUBLIC_KEY ("")
-		- MC_MAX_LRU_SIZE (DefaultConfig)
-		- MC_MAX_INDEX_COUNT (DefaultConfig)
-		- MC_MAX_INDEX_SIZE (DefaultConfig)
-		- MC_DATA_DIR (DefaultConfig)
-		- MONGODB_CONNECTION_STRING ("")
-*/
-
-type ctxKey string
-type genericMap map[string]interface{}
-type messageFeed chan []byte
-
 func main() {
-	now := time.Now()
-	manifestDoc, _ := mcache.EncodeManifest(mcache.Manifest{
-		ID:          "hardcoded",
-		UpdatedAt:   now.Add(-1 * time.Minute).Unix(),
-		DocumentIDs: mcache.NewIDSet("a", "b"),
-	})
-	docs := mcache.DocSet{
-		Docs: map[string]mcache.Document{
-			"a":         mcache.Document{ID: "a", UpdatedAt: now.Add(-3 * time.Minute).Unix(), Body: []byte("Document (a)")},
-			"b":         mcache.Document{ID: "b", UpdatedAt: now.Add(-2 * time.Minute).Unix(), Body: []byte("Document (b)")},
-			"c":         mcache.Document{ID: "c", UpdatedAt: now.Unix(), Body: []byte("Document (c)")},
-			"hardcoded": *manifestDoc,
-		},
-	}
-	m, err := mcache.NewMCache(mcache.DefaultConfig)
+	config := loadConfig()
+	m, err := mcache.NewMCache(config)
 	if err != nil {
-		panic(err)
+		panic("Error loading MCache: " + err.Error())
 	}
-	idx, _ := m.CreateIndex("dev")
-	err = idx.Update(&docs)
-	if err != nil {
-		panic(err)
-	}
+
+	buildHardcodedSampleIndex(m)
+
 	router := httprouter.New()
-	router.GET("/docs", requireToken(func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		indexID := getCtx(r, "indexID").(string)
-		manifestID := getCtx(r, "manifestID").(string)
-		updatedAfterStr := r.URL.Query().Get("updatedAfter")
+	router.POST("/i/:indexID", createHandler(m))
+	router.PUT("/i/:indexID", updateHandler(m))
+	router.GET("/i/:indexID/m/:manifestID/@/:updatedAfter", queryHandler(m))
+
+	http.ListenAndServe(config.Host+":"+config.Port, router)
+}
+
+func queryHandler(m *mcache.MCache) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		indexID := ps.ByName("indexID")
+		manifestID := ps.ByName("manifestID")
+		updatedAfterStr := ps.ByName("updatedAfter")
 		updatedAfter, err := strconv.ParseInt(updatedAfterStr, 10, 64)
 		if err != nil {
 			badRequest(&w, "Invalid updatedAfter ("+updatedAfterStr+")")
 			return
 		}
-		conn, err := m.Connect(indexID, manifestID)
-		if err != nil {
-			badRequest(&w, "Unabled to connect to index/manifest ("+indexID+", "+manifestID+"): "+err.Error())
-			return
-		}
-		notify := w.(http.CloseNotifier).CloseNotify()
-		go func() {
-			<-notify
-			conn.Disconnect()
-		}()
 
 		docs, err := m.Query(indexID, manifestID, updatedAfter)
 		if err != nil {
@@ -87,156 +51,80 @@ func main() {
 			return
 		}
 
-		outgoing := make(messageFeed, 16384)
-		q := bbq.NewBatchQueue(func(items []interface{}) error {
-			for _, item := range items {
-				bz, err := json.Marshal(item)
-				if err != nil {
-					fmt.Printf("Error writing update: %+v\n", err)
-					continue
-				}
-				outgoing <- bz
-			}
-			return nil
-		}, bbq.BatchQueueOptions{FlushTime: time.Second, FlushCount: 10})
-		done := make(chan bool)
-		q.Enqueue(docs)
-		q.FlushNow()
-		startSSE(&w, outgoing, done)
-
-		defer close(outgoing)
-		defer q.FlushNow()
-
-		for {
-			select {
-			case docs, open := <-conn.ChangeFeed:
-				if !open {
-					return
-				}
-				q.Enqueue(docs)
-				fmt.Printf("Enqueued changes: %+v\n", docs)
-			case <-done:
-				err := conn.Disconnect()
-				if err != nil {
-					fmt.Printf("Error disconnecting: %+v\n", err)
-				}
-				return
-			default:
-				q.FlushNow()
-			}
+		bz, err := json.Marshal(docs)
+		if err != nil {
+			panic("Error encoding docs: " + err.Error())
 		}
-	}))
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, err = w.Write(bz)
+		if err != nil {
+			panic("Error writing HTTP response: " + err.Error())
+		}
+	}
+}
 
-	router.POST("/docs", requireToken(func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		indexID := getCtx(r, "indexID").(string)
+func updateHandler(m *mcache.MCache) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		indexID := ps.ByName("indexID")
 		bodyBz, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			badRequest(&w, "Error reading request body: "+err.Error())
 			return
 		}
-		docs := mcache.DocSet{}
-		if err = json.Unmarshal(bodyBz, &docs); err != nil {
+		docsArray := []mcache.Document{}
+		if err = json.Unmarshal(bodyBz, &docsArray); err != nil {
 			badRequest(&w, "Error decoding request body: "+err.Error())
 			return
 		}
-		if err = m.Update(indexID, &docs); err != nil {
+
+		docs := mcache.NewDocSet(docsArray...)
+		updated, err := m.Update(indexID, docs)
+		if err != nil {
 			unknownError(&w, err)
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("Updated"))
-	}))
-
-	http.ListenAndServe(":1337", router)
+		body, err := json.Marshal(updated)
+		if err != nil {
+			badRequest(&w, "Error decoding request body: "+err.Error())
+			return
+		}
+		w.Write([]byte(body))
+	}
 }
 
-func requireToken(next httprouter.Handle) httprouter.Handle {
+func createHandler(m *mcache.MCache) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		token := getToken(r)
-		if token == "" {
-			notFound(&w)
+		indexID := ps.ByName("indexID")
+		if indexID == "" || len(indexID) > 512 {
+			badRequest(&w, "Invalid index id ("+indexID+")")
+			return
 		}
-		pieces := strings.Split(token, ":")
-		if len(pieces) != 2 {
-			forbidden(&w, "Invalid token")
+
+		idx := m.GetIndex(indexID)
+		if idx != nil {
+			badRequest(&w, "Index exists")
+			return
 		}
-		r = setCtx(r, genericMap{"indexID": pieces[0], "manifestID": pieces[1]})
-		next(w, r, ps)
-	}
-}
 
-func getToken(r *http.Request) string {
-	authVals := r.Header["Authentication"]
-	token := ""
-	if len(authVals) > 0 {
-		token = authVals[0]
-	} else {
-		token = r.URL.Query().Get("token")
-	}
-	return token
-}
-
-func startSSE(ww *http.ResponseWriter, msgs messageFeed, done chan bool) {
-	w := *ww
-	f, ok := w.(http.Flusher)
-	if !ok {
-		badRequest(ww, "Streaming unsupported")
-		done <- true
-		return
-	}
-	// Set the headers related to event streaming.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	f.Flush()
-
-	prefix := []byte("data: ")
-	prefixLen := len(prefix)
-	go func() {
-		for {
-			msg, open := <-msgs
-			if !open {
-				fmt.Println("Outgoing message channel closed")
-				f.Flush()
-				return
-			}
-			bz := make([]byte, len(msg)+prefixLen+2)
-			copy(bz[:prefixLen], prefix)
-			copy(bz[prefixLen:], msg)
-			copy(bz[len(msg)+prefixLen:], "\n\n")
-			fmt.Printf("Writing bz: %v\n", string(bz))
-			count, err := w.Write(bz)
-			if err != nil {
-				fmt.Printf("Error writing: %v\n", err)
-				break
-			}
-			fmt.Printf("Flushing %v bytes\n", count)
-			f.Flush()
+		idx, err := m.CreateIndex(indexID)
+		if err != nil {
+			unknownError(&w, err)
 		}
-		done <- true
-	}()
-}
 
-func setCtx(r *http.Request, kv genericMap) *http.Request {
-	for k, v := range kv {
-		r = r.WithContext(context.WithValue(r.Context(), ctxKey(k), v))
+		bz, err := json.Marshal(idx)
+		if err != nil {
+			unknownError(&w, err)
+		}
+
+		jsonSuccess(&w, bz)
 	}
-	return r
-}
-
-func getCtx(r *http.Request, k string) interface{} {
-	return r.Context().Value(ctxKey(k))
 }
 
 func badRequest(w *http.ResponseWriter, message string) {
 	(*w).WriteHeader(400)
 	(*w).Write([]byte("Bad request: " + message))
-}
-
-func forbidden(w *http.ResponseWriter, message string) {
-	(*w).WriteHeader(401)
-	(*w).Write([]byte("Not allowed: " + message))
 }
 
 func notFound(w *http.ResponseWriter) {
@@ -247,4 +135,70 @@ func notFound(w *http.ResponseWriter) {
 func unknownError(w *http.ResponseWriter, err error) {
 	(*w).WriteHeader(500)
 	(*w).Write([]byte("Unknown error: " + err.Error()))
+}
+
+func jsonSuccess(w *http.ResponseWriter, bz []byte) {
+	(*w).WriteHeader(200)
+	(*w).Header().Add("Content-Type", "application/json")
+}
+
+func buildHardcodedSampleIndex(m *mcache.MCache) {
+	manifestDoc, _ := mcache.EncodeManifest(&mcache.Manifest{
+		ID:          "m",
+		DocumentIDs: mcache.NewIDSet("a", "b"),
+	})
+	docs := mcache.DocSet{
+		Docs: map[string]mcache.Document{
+			"a": {ID: "a", Body: []byte("Document A")},
+			"b": {ID: "b", Body: []byte("Document B")},
+			"c": {ID: "c", Body: []byte("Document C")},
+			"m": *manifestDoc,
+		},
+	}
+	idx, _ := m.CreateIndex("sample")
+	_, err := idx.Update(&docs)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func loadConfig() mcache.Config {
+	err := godotenv.Load()
+	if err != nil {
+		panic("Error loading .env file: " + err.Error())
+	}
+
+	host := os.Getenv("HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "1337"
+	}
+	dataDir := os.Getenv("MC_DATA_DIR")
+	maxIndexCount := mustParseEnvInt("MC_MAX_INDEX_COUNT", 10)
+	maxIndexSize := mustParseEnvInt("MC_MAX_INDEX_SIZE", 1000000)
+	lruCacheSize := mustParseEnvInt("MC_LRU_CACHE_SIZE", 10000)
+
+	return mcache.Config{
+		Host:          host,
+		Port:          port,
+		DataDir:       dataDir,
+		MaxIndexCount: maxIndexCount,
+		MaxIndexSize:  maxIndexSize,
+		LRUCacheSize:  lruCacheSize,
+	}
+}
+
+func mustParseEnvInt(key string, defaultVal int) int {
+	valStr := os.Getenv(key)
+	if len(valStr) == 0 {
+		return defaultVal
+	}
+	valInt, err := strconv.Atoi(valStr)
+	if err != nil {
+		panic("Error parsing " + key)
+	}
+	return valInt
 }

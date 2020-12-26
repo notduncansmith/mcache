@@ -1,20 +1,32 @@
 # Manifest Cache - Edge data replication made easy
 
-Manifest Cache (or MCache) is a hybrid on-disk/in-memory document store written in Go. It offers an HTTP API and JS client library, and is designed to serve end-users by replicating their server-stored data directly to their client devices. The primary intended usage pattern involves users initially downloading their entire personal dataset and storing it in local storage, then sub. For applications with data siloed by user or group of users, this strategy can save massive amounts of bandwidth and latency.
+Manifest Cache (or MCache) is a hybrid on-disk/in-memory document store written in Go. It aims to support "offline-first" software and improve bandwidth consumption and latency for multi-tenant applications that serve data over HTTP.
+
+It is designed to serve directly serve end-user requests, replicating their server-stored data to their client devices. The primary intended usage pattern is users initially downloading their personal working set and storing it locally, then subsequently querying for updates. For applications with largely or entirely siloed datasets, this distribution strategy can save massive amounts of bandwidth and latency compared to traditional methods. MCache is designed to support "offline-first" applications.
 
 ## How it works
 
-MCache stores **documents**, which are opaque blobs decorated with `id` and `updatedAt` properties of types `string` and `int64` respectively, in independent collections called **indexes**. Special documents in an index called **manifests** hold lists of other document IDs. A manifest may contain references to any other documents within the same index.
+MCache stores **documents**, which are opaque blobs decorated with `ID` and `UpdatedAt` properties, in independent collections called **indexes**. Special documents in an index called **manifests** hold lists of other document IDs.
 
-Whenever a change is made on the primary data store, this change must be reflected to MCache through an HTTP POST request. Updates to multiple documents in the same index may be batched in a single request. Documents must be provided in full (because MCache is unaware of the encoding/structure of document bodies, it cannot merge deltas).
+Indexes are created with an HTTP POST request, and documents (including manifests) are updated with HTTP PUT requests. Updates to multiple documents in the same index may be batched in a single request. Documents must be provided in full; MCache is unaware of the encoding structure of document bodies and cannot merge document bodies.
 
-A query to MCache for the latest changes includes a manifest ID and the timestamp of the client's most recently-updated document. That query will return any documents in the manifest whose MCache entries have been updated since that timestamp. Documents are always delivered in full.
+A query to MCache includes an index ID, a manifest ID, and a timestamp. MCache will respond with any documents in the manifest that have been updated since the given timestamp. Documents are always delivered in full. Documents cannot be deleted, but they can be updated with a `Deleted` property and an empty `Body`. Indexes cannot be deleted via the API, but since each index is contained in a single standalone file on disk, index files can be deleted while the server is not running.
 
-The client library stores documents received from queries in `localStorage`. It provides facilities for applications to query this data and call hooks when updates are received.
+## HTTP API
 
-## Full Docs
+### `POST /i/:indexID` - Create Index
 
-TODO
+- Body: Empty
+- Response: New Index
+
+### `PUT /i/:indexID` - Update Indexed Documents
+
+- Body: JSON-encoded array of Document objects (UpdatedAt on given Documents is ignored since this property is set automatically on write)
+- Response: JSON-encoded DocSet object containing updated Documents
+
+### `GET /i/:indexID/m/:manifestID/@/:updatedAfter` - Query Indexed Documents By Manifest
+
+- Response: JSON-encoded DocSet object containing Documents that satisfy the query
 
 ## License
 

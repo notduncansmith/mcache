@@ -3,6 +3,7 @@ package mcache
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 	du "github.com/notduncansmith/duramap"
@@ -10,10 +11,9 @@ import (
 
 // Index represents a collection of documents managed by the cache
 type Index struct {
-	ID      string
-	docs    *du.Duramap
-	cache   *lru.TwoQueueCache
-	streams map[string]DocStream
+	ID    string
+	docs  *du.Duramap
+	cache *lru.TwoQueueCache
 }
 
 // NewIndex returns a new Index
@@ -23,42 +23,28 @@ func NewIndex(id string, docs *du.Duramap, cacheSize int) (*Index, error) {
 		return nil, err
 	}
 
-	return &Index{id, docs, cache, map[string]DocStream{}}, nil
+	return &Index{id, docs, cache}, nil
 }
 
 // Update updates the index documents with the latest versions
-func (i *Index) Update(docs *DocSet) error {
+func (i *Index) Update(docs *DocSet) (*DocSet, error) {
 	updated := NewDocSet()
-
-	i.docs.UpdateMap(func(tx *du.Tx) error {
+	now := time.Now().Unix()
+	err := i.docs.UpdateMap(func(tx *du.Tx) error {
 		for _, d := range docs.Docs {
-			stored := tx.Get(d.ID)
-			if stored == nil {
-				tx.Set(d.ID, d)
-				i.cache.Add(d.ID, d)
-				continue
-			}
-			storedDoc, ok := stored.(Document)
-			if !ok {
-				fmt.Printf("Unable to decode document: %+v", stored)
-				continue
-			}
-
-			if storedDoc.UpdatedAt < d.UpdatedAt {
-				tx.Set(d.ID, d)
-				i.cache.Add(d.ID, d)
-				updated.Add(d)
-			}
+			d.UpdatedAt = now
+			updated.Add(d)
+			i.cache.Add(d.ID, d)
+			tx.Set(d.ID, d)
 		}
-
 		return nil
 	})
 
-	for _, s := range i.streams {
-		s.Update(updated)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return updated, nil
 }
 
 // Get gets the index document with the given ID
@@ -96,37 +82,34 @@ func (i *Index) GetAll() (docs *DocSet, err error) {
 }
 
 // SoftDelete updates the index documents with a tombstone value
-func (i *Index) SoftDelete(ids IDSet) error {
-	return i.docs.UpdateMap(func(tx *du.Tx) error {
-		for id := range ids {
-			doc := NewTombstone(id)
-			tx.Set(id, doc)
-			i.cache.Add(id, doc)
-		}
-		return nil
-	})
+func (i *Index) SoftDelete(ids IDSet) (*DocSet, error) {
+	now := time.Now().Unix()
+	updates := NewDocSet()
+	for id := range ids {
+		updates.Add(Document{ID: id, Deleted: true, UpdatedAt: now})
+	}
+
+	return i.Update(updates)
 }
 
-// TODO: Vacuum will permanently delete any tombstone documents that haven't been updated since a certain date
-
 // GetManifest returns a manifest document
-func (i *Index) GetManifest(manifestDocumentID string) (*Manifest, error) {
-	docs, err := i.LoadDocuments(NewIDSet(manifestDocumentID), 0)
+func (i *Index) GetManifest(id string) (*Manifest, error) {
+	docs, err := i.LoadDocuments(NewIDSet(id), 0)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load manifest %v: %v", manifestDocumentID, err)
+		return nil, fmt.Errorf("Unable to load manifest %v: %v", id, err)
 	}
 	if docs == nil || len(docs.Docs) == 0 {
-		return nil, fmt.Errorf("Unable to load manifest %v: not found", manifestDocumentID)
+		return nil, fmt.Errorf("Unable to load manifest %v: not found", id)
 	}
 
-	manifestDocument := docs.Docs[manifestDocumentID]
+	manifestDocument := docs.Docs[id]
 	docIds := IDSet{}
 
 	if err = json.Unmarshal(manifestDocument.Body, &docIds); err != nil {
 		return nil, fmt.Errorf("Unable to decode manifest body: %v", err)
 	}
 
-	m := Manifest{ID: manifestDocumentID, UpdatedAt: manifestDocument.UpdatedAt, DocumentIDs: docIds}
+	m := Manifest{ID: id, UpdatedAt: manifestDocument.UpdatedAt, DocumentIDs: docIds}
 	return &m, nil
 }
 
@@ -140,19 +123,9 @@ func (i *Index) Query(manifestID string, updatedAfter Timestamp) (*DocSet, error
 	return i.LoadDocuments(m.DocumentIDs, updatedAfter)
 }
 
-// Connect returns a Connection to the DocStream for a given manifestID
-func (i *Index) Connect(manifestID string) *Connection {
-	stream := i.streams[manifestID]
-	if stream.ManifestID == "" {
-		stream = *NewDocStream(i, manifestID)
-		i.streams[manifestID] = stream
-	}
-	return stream.Connect()
-}
-
 // LoadDocuments will, for a given set of document IDs, query the LRU cache for the latest matching versions and fetch the rest from the store
 func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (*DocSet, error) {
-	docs := NewDocSet()
+	results := NewDocSet()
 	uncachedIds := IDSet{}
 
 	for k := range docIDs {
@@ -166,10 +139,10 @@ func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (*DocSet, er
 		}
 		doc, ok := cached.(Document)
 		if !ok {
-			panic("Non-document found in cache")
+			panic("Non-document (id: " + k + ") found in store")
 		}
-		if doc.UpdatedAt >= updatedAfter {
-			docs.Add(doc)
+		if doc.UpdatedAt > updatedAfter {
+			results.Add(doc)
 		}
 	}
 
@@ -179,16 +152,16 @@ func (i *Index) LoadDocuments(docIDs IDSet, updatedAfter Timestamp) (*DocSet, er
 		for k := range uncachedIds {
 			doc, ok = m[k].(Document)
 			if !ok {
-				continue
+				panic("Non-document (id: " + k + ") found in store")
 			}
 			if doc.UpdatedAt > updatedAfter {
-				docs.Add(doc)
+				results.Add(doc)
 				i.cache.Add(k, doc)
 			}
 		}
 	})
 
-	return docs, nil
+	return results, nil
 }
 
 // Keys returns all the keys in an index
