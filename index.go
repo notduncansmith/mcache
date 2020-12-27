@@ -11,7 +11,7 @@ import (
 
 // Index represents a collection of documents managed by the cache
 type Index struct {
-	ID    string
+	ID    string `json:"id"`
 	docs  *du.Duramap
 	cache *lru.TwoQueueCache
 }

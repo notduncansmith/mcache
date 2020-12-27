@@ -23,9 +23,9 @@ type SetEntry struct{}
 
 // DocSet is a map of document IDs to documents
 type DocSet struct {
-	Docs  map[string]Document
-	Start Timestamp
-	End   Timestamp
+	Docs  map[string]Document `json:"docs"`
+	Start Timestamp           `json:"start"`
+	End   Timestamp           `json:"end"`
 }
 
 // NewDocSet returns a DocSet for a set of docs
