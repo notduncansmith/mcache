@@ -21,6 +21,11 @@ _Create Index_
 - **Body:** Empty
 - **Response:** New Index
 
+```
+$ curl -X POST 'http://localhost:1337/i/example'
+{"id":"example"}
+```
+
 ### `PUT /i/:indexID`
 
 _Update Indexed Documents_
@@ -28,11 +33,55 @@ _Update Indexed Documents_
 - **Body:** JSON-encoded array of Document objects (UpdatedAt on given Documents is ignored since this property is set automatically on write)
 - **Response:** JSON-encoded DocSet object containing updated Documents
 
+```
+$ curl -X PUT -d '[{"id": "a", "body": "RG9jdW1lbnQgQQ==", "deleted": false }, { "id": "m", "body": "eyJhIjp7fX0=", "deleted": false }]' 'http://localhost:1337/i/example'
+{
+  "docs": {
+    "a": {
+      "id": "a",
+      "updatedAt": 1609096924,
+      "body": "RG9jdW1lbnQgQQ==",
+      "deleted": false
+    },
+    "m": {
+      "id": "m",
+      "updatedAt": 1609096924,
+      "body": "eyJhIjp7fX0=",
+      "deleted": false
+    }
+  },
+  "start": 1609096924,
+  "end": 1609096924
+}
+```
+
 ### `GET /i/:indexID/m/:manifestID/@/:updatedAfter`
 
 _Query Indexed Documents_
 
 - **Response:** JSON-encoded DocSet object containing Documents that satisfy the query
+
+```
+$ curl 'http://localhost:1337/i/example/m/m/@/0'
+{
+  "docs": {
+    "a": {
+      "id": "a",
+      "updatedAt": 1609096924,
+      "body": "RG9jdW1lbnQgQQ==",
+      "deleted": false
+    },
+    "m": {
+      "id": "m",
+      "updatedAt": 1609096924,
+      "body": "eyJhIjp7fX0=",
+      "deleted": false
+    }
+  },
+  "start": 1609096924,
+  "end": 1609096924
+}
+```
 
 ## License
 
