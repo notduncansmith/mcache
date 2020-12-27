@@ -171,12 +171,12 @@ func loadConfig() mcache.Config {
 
 	host := os.Getenv("HOST")
 	if host == "" {
-		host = "localhost"
+		host = mcache.DefaultConfig.Host
 	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "1337"
+		port = mcache.DefaultConfig.Port
 	}
 
 	dataDir := os.Getenv("MC_DATA_DIR")

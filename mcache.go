@@ -18,6 +18,8 @@ var DefaultConfig = Config{
 	MaxIndexCount: 100000,
 	MaxIndexSize:  100000,
 	DataDir:       "./.mcache",
+	Host:          "localhost",
+	Port:          "1337",
 }
 
 // MCache is an HTTP-accessible object cache
