@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"git.sr.ht/~dms/mcache"
 	"github.com/joho/godotenv"
 	"github.com/julienschmidt/httprouter"
-	"github.com/notduncansmith/mcache"
 )
 
 func main() {
