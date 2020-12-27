@@ -125,17 +125,20 @@ func createHandler(m *mcache.MCache) httprouter.Handle {
 
 func badRequest(w *http.ResponseWriter, message string) {
 	(*w).WriteHeader(400)
-	(*w).Write([]byte("Bad request: " + message))
+	(*w).Header().Add("Content-Type", "application/json")
+	(*w).Write([]byte("{\"error\":\"Bad request: " + message + "\"}"))
 }
 
 func notFound(w *http.ResponseWriter) {
 	(*w).WriteHeader(404)
-	(*w).Write([]byte("Not found"))
+	(*w).Header().Add("Content-Type", "application/json")
+	(*w).Write([]byte("{\"error\":\"Not found\"}"))
 }
 
 func unknownError(w *http.ResponseWriter, err error) {
 	(*w).WriteHeader(500)
-	(*w).Write([]byte("Unknown error: " + err.Error()))
+	(*w).Header().Add("Content-Type", "application/json")
+	(*w).Write([]byte("{\"error\":\"Unknown error: " + err.Error() + "\"}"))
 }
 
 func jsonSuccess(w *http.ResponseWriter, bz []byte) {
