@@ -16,11 +16,11 @@ func TestMCacheRoundtrip(t *testing.T) {
 	os.RemoveAll(testDataDir + "/mcache-*")
 	defer os.RemoveAll(testDataDir + "/mcache-*")
 	now := time.Now()
-	manifestDoc, _ := EncodeManifest(&Manifest{
+	manifestDoc, _ := (&Manifest{
 		ID:          "m:a&b",
 		UpdatedAt:   now.Add(-1 * time.Minute).Unix(),
 		DocumentIDs: NewIDSet("a", "b"),
-	})
+	}).Encode()
 	knownDocs := NewDocSet(
 		Document{ID: "a"},
 		Document{ID: "b"},
@@ -76,7 +76,7 @@ func TestMCacheRoundtrip(t *testing.T) {
 	}
 
 	manifest.Add("c")
-	newManifestDoc, err := EncodeManifest(manifest)
+	newManifestDoc, err := manifest.Encode()
 	if err != nil {
 		t.Fatalf("Failed to encode manifest: %v", err)
 	}

@@ -80,8 +80,8 @@ func (m *Manifest) Add(documentID string) {
 	m.DocumentIDs[documentID] = SetEntry{}
 }
 
-// EncodeManifest returns a Document that stores a Manifest
-func EncodeManifest(m *Manifest) (*Document, error) {
+// Encode returns a Document that stores a Manifest
+func (m *Manifest) Encode() (*Document, error) {
 	body, err := json.Marshal(m.DocumentIDs)
 	if err != nil {
 		return nil, err

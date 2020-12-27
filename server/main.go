@@ -144,10 +144,10 @@ func jsonSuccess(w *http.ResponseWriter, bz []byte) {
 }
 
 func buildHardcodedSampleIndex(m *mcache.MCache) {
-	manifestDoc, _ := mcache.EncodeManifest(&mcache.Manifest{
+	manifestDoc, _ := (&mcache.Manifest{
 		ID:          "m",
 		DocumentIDs: mcache.NewIDSet("a", "b"),
-	})
+	}).Encode()
 	docs := mcache.DocSet{
 		Docs: map[string]mcache.Document{
 			"a": {ID: "a", Body: []byte("Document A")},
