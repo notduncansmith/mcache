@@ -1,8 +1,8 @@
-# Manifest Cache - Edge data replication made easy
+# Manifest Cache - Fast offline-first apps
 
-Manifest Cache (or MCache) is a hybrid on-disk/in-memory document store written in Go. It aims to support "offline-first" software and improve bandwidth consumption and latency for multi-tenant applications that serve data over HTTP.
+Manifest Cache (or MCache) is a disk-backed in-memory document store written in Go. It aims to support offline-first applications and improve both bandwidth consumption and latency for multi-tenant applications that serve siloed data over HTTP.
 
-It is designed to serve directly serve end-user requests, replicating their server-stored data to their client devices. The primary intended usage pattern is users initially downloading their personal working set and storing it locally, then subsequently querying for updates. For applications with largely or entirely siloed datasets, this distribution strategy can save massive amounts of bandwidth and latency compared to traditional methods. MCache is designed to support "offline-first" applications.
+It is designed to directly serve end-user HTTP requests, replicating their server-stored data to their client devices. The primary intended usage pattern is users initially downloading their personal working set and storing it locally, then subsequently querying for updates. For applications with largely or entirely siloed datasets, this distribution strategy can save massive amounts of bandwidth and latency compared to traditional methods.
 
 ## How it works
 
@@ -14,19 +14,25 @@ A query to MCache includes an index ID, a manifest ID, and a timestamp. MCache w
 
 ## HTTP API
 
-### `POST /i/:indexID` - Create Index
+### `POST /i/:indexID`
 
-- Body: Empty
-- Response: New Index
+_Create Index_
 
-### `PUT /i/:indexID` - Update Indexed Documents
+- **Body:** Empty
+- **Response:** New Index
 
-- Body: JSON-encoded array of Document objects (UpdatedAt on given Documents is ignored since this property is set automatically on write)
-- Response: JSON-encoded DocSet object containing updated Documents
+### `PUT /i/:indexID`
 
-### `GET /i/:indexID/m/:manifestID/@/:updatedAfter` - Query Indexed Documents By Manifest
+_Update Indexed Documents_
 
-- Response: JSON-encoded DocSet object containing Documents that satisfy the query
+- **Body:** JSON-encoded array of Document objects (UpdatedAt on given Documents is ignored since this property is set automatically on write)
+- **Response:** JSON-encoded DocSet object containing updated Documents
+
+### `GET /i/:indexID/m/:manifestID/@/:updatedAfter`
+
+_Query Indexed Documents_
+
+- **Response:** JSON-encoded DocSet object containing Documents that satisfy the query
 
 ## License
 
