@@ -119,7 +119,7 @@ func (i *Index) Query(manifestID string, updatedAfter Timestamp) (*DocSet, error
 	if err != nil {
 		return nil, err
 	}
-
+	m.DocumentIDs[manifestID] = SetEntry{}
 	return i.LoadDocuments(m.DocumentIDs, updatedAfter)
 }
 
