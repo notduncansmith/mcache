@@ -32,6 +32,8 @@ github.com/notduncansmith/bbq v0.0.0-20191201161117-8d61b66664b8 h1:Q/saxY6hgU2/
 github.com/notduncansmith/bbq v0.0.0-20191201161117-8d61b66664b8/go.mod h1:H0eHiwykBI+nO7qE3kH2hKoF1+XD/u++pDMVbCnDu0c=
 github.com/notduncansmith/duramap v0.0.0-20200210002654-444af415bf0d h1:GdAIgMXcKUDdVpgftxggKv5k42kQTvI7gjwO320fqPM=
 github.com/notduncansmith/duramap v0.0.0-20200210002654-444af415bf0d/go.mod h1:QcKPaRATNEzzXEQZxY0BQpHnf+u55z9nAthtF9PGUWM=
+github.com/notduncansmith/mcache v0.0.0-20201226235828-ff43ffb41bf3 h1:THT4/6gPMXZduZdFrpF917G9B2flGET8C7HK8V/2+hM=
+github.com/notduncansmith/mcache v0.0.0-20201226235828-ff43ffb41bf3/go.mod h1:kc/N3qJkDf16icUZWhsPqwP2k22UI4X+FuT+yCrTA+8=
 github.com/notduncansmith/mutable v0.0.0-20191105072558-a13a78d07b91 h1:B4WiScuDn9FK9MEG4rQ2q+AnR/uPgnEQezml2rbYE9A=
 github.com/notduncansmith/mutable v0.0.0-20191105072558-a13a78d07b91/go.mod h1:FSP687EO4iKB5iYam28rPwVr5LYf+SACbK0N1D6aFC4=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
