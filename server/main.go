@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -165,21 +166,27 @@ func buildHardcodedSampleIndex(m *mcache.MCache) {
 func loadConfig() mcache.Config {
 	err := godotenv.Load()
 	if err != nil {
-		panic("Error loading .env file: " + err.Error())
+		fmt.Println("Error loading .env file: " + err.Error())
 	}
 
 	host := os.Getenv("HOST")
 	if host == "" {
 		host = "localhost"
 	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "1337"
 	}
+
 	dataDir := os.Getenv("MC_DATA_DIR")
-	maxIndexCount := mustParseEnvInt("MC_MAX_INDEX_COUNT", 10)
-	maxIndexSize := mustParseEnvInt("MC_MAX_INDEX_SIZE", 1000000)
-	lruCacheSize := mustParseEnvInt("MC_LRU_CACHE_SIZE", 10000)
+	if dataDir == "" {
+		dataDir = mcache.DefaultConfig.DataDir
+	}
+
+	maxIndexCount := mustParseEnvInt("MC_MAX_INDEX_COUNT", mcache.DefaultConfig.MaxIndexCount)
+	maxIndexSize := mustParseEnvInt("MC_MAX_INDEX_SIZE", mcache.DefaultConfig.MaxIndexSize)
+	lruCacheSize := mustParseEnvInt("MC_LRU_CACHE_SIZE", mcache.DefaultConfig.LRUCacheSize)
 
 	return mcache.Config{
 		Host:          host,
