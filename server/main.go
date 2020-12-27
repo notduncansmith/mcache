@@ -112,11 +112,13 @@ func createHandler(m *mcache.MCache) httprouter.Handle {
 		idx, err := m.CreateIndex(indexID)
 		if err != nil {
 			unknownError(&w, err)
+			return
 		}
 
 		bz, err := json.Marshal(idx)
 		if err != nil {
 			unknownError(&w, err)
+			return
 		}
 
 		jsonSuccess(&w, bz)
@@ -144,6 +146,7 @@ func unknownError(w *http.ResponseWriter, err error) {
 func jsonSuccess(w *http.ResponseWriter, bz []byte) {
 	(*w).WriteHeader(200)
 	(*w).Header().Add("Content-Type", "application/json")
+	(*w).Write(bz)
 }
 
 func buildHardcodedSampleIndex(m *mcache.MCache) {
